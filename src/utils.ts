@@ -3,6 +3,7 @@ export function getDataDoBrasilStr(data: Date): string {
 }
 
 export function converterHorasStringParaDecimal(horas: string): number {
+  if (!horas) return 0;
   const partes = horas.split(":");
   if (partes.length !== 2) {
     throw new Error("Formato de horas inválido. Use 'HH:mm'.");
@@ -29,3 +30,27 @@ export function parseDataDoBrasil(dateStr: string): Date {
 export function capitalizeFirstLetter(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+export const calcularHorasCompletas = (
+  entrada?: string,
+  saidaAlmoco?: string,
+  voltaAlmoco?: string,
+  saida?: string
+): string => {
+  if (!entrada || !saida) return "00:00";
+
+  const [hEntrada, mEntrada] = entrada.split(":").map(Number);
+  const [hSaida, mSaida] = saida.split(":").map(Number);
+
+  let minutosAlmoco = 0;
+  if (saidaAlmoco && voltaAlmoco) {
+    const [hSaidaAlmoco, mSaidaAlmoco] = saidaAlmoco.split(":").map(Number);
+    const [hVoltaAlmoco, mVoltaAlmoco] = voltaAlmoco.split(":").map(Number);
+    minutosAlmoco =
+      hVoltaAlmoco * 60 + mVoltaAlmoco - (hSaidaAlmoco * 60 + mSaidaAlmoco);
+  }
+
+  const totalMinutos =
+    hSaida * 60 + mSaida - (hEntrada * 60 + mEntrada) - minutosAlmoco;
+  return converterDecimalParaHorasString(Math.max(0, totalMinutos / 60));
+};

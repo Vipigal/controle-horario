@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Loader2,
   Plus,
   Save,
   Trash2,
@@ -11,8 +12,8 @@ import {
 import { useEffect, useState } from "react";
 import { Registro } from "../types";
 import {
+  calcularHorasCompletas,
   capitalizeFirstLetter,
-  converterDecimalParaHorasString,
   converterHorasStringParaDecimal,
   getDataDoBrasilStr,
   parseDataDoBrasil,
@@ -26,6 +27,7 @@ export type RegistroEditavel = Partial<Registro> & {
 export default function Home() {
   // Estado principal
   const [registros, setRegistros] = useState<Registro[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Metas
   const [metaMensal, setMetaMensal] = useState<number>(132);
@@ -57,10 +59,26 @@ export default function Home() {
   });
 
   useEffect(() => {
-    const dadosSalvos = JSON.parse(
-      localStorage.getItem("horasEstagio") || "[]"
-    );
-    setRegistros(dadosSalvos);
+    const fetchRegistros = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch("/api/registros");
+        const data = await response.json();
+        console.log(data);
+        setRegistros(data.registros || []);
+      } catch (ex) {
+        console.error(ex);
+        setRegistros([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchRegistros();
+
+    // const dadosSalvos = JSON.parse(
+    //   localStorage.getItem("horasEstagio") || "[]"
+    // );
+    // setRegistros(dadosSalvos);
 
     const metaMensalSalva = localStorage.getItem("metaMensal");
     const metaSemanalSalva = localStorage.getItem("metaSemanal");
@@ -71,30 +89,6 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("horasEstagio", JSON.stringify(registros));
   }, [registros]);
-
-  const calcularHorasCompletas = (
-    entrada?: string,
-    saidaAlmoco?: string,
-    voltaAlmoco?: string,
-    saida?: string
-  ): string => {
-    if (!entrada || !saida) return "00:00";
-
-    const [hEntrada, mEntrada] = entrada.split(":").map(Number);
-    const [hSaida, mSaida] = saida.split(":").map(Number);
-
-    let minutosAlmoco = 0;
-    if (saidaAlmoco && voltaAlmoco) {
-      const [hSaidaAlmoco, mSaidaAlmoco] = saidaAlmoco.split(":").map(Number);
-      const [hVoltaAlmoco, mVoltaAlmoco] = voltaAlmoco.split(":").map(Number);
-      minutosAlmoco =
-        hVoltaAlmoco * 60 + mVoltaAlmoco - (hSaidaAlmoco * 60 + mSaidaAlmoco);
-    }
-
-    const totalMinutos =
-      hSaida * 60 + mSaida - (hEntrada * 60 + mEntrada) - minutosAlmoco;
-    return converterDecimalParaHorasString(Math.max(0, totalMinutos / 60));
-  };
 
   const adicionarRegistroManual = () => {
     const horasTrabalhadas: string =
@@ -216,10 +210,7 @@ export default function Home() {
       saidaAlmoco: registroExistente?.saidaAlmoco || "",
       voltaAlmoco: registroExistente?.voltaAlmoco || "",
       saida: registroExistente?.saida || "",
-      horasManual:
-        registroExistente && !registroExistente.entrada
-          ? registroExistente.horasTrabalhadas
-          : "",
+      horasManual: registroExistente?.horasTrabalhadas || "",
     });
     setModalAberto(true);
   };
@@ -360,237 +351,257 @@ export default function Home() {
 
   return (
     <div className="p-6 bg-gradient-to-br from-purple-50 to-pink-50 min-h-screen">
-      <div className="bg-white rounded-2xl shadow-xl p-8 max-w-7xl  mx-auto ">
-        <h1 className="text-3xl font-bold text-gray-800 mb-8 flex items-center gap-3">
-          <Clock className="text-purple-600" />
-          Controle de Ponto - Estágio
-        </h1>
-
-        {/* Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-2">Horas este Mês</h3>
-            <p className="text-3xl font-bold">{formatarHoras(horasMes)}</p>
-            <p className="text-purple-100">Meta: {formatarHoras(metaMensal)}</p>
-            <div className="w-full bg-purple-400 rounded-full h-2 mt-2">
-              <div
-                className="bg-white h-2 rounded-full transition-all duration-500"
-                style={{
-                  width: `${Math.min(100, (horasMes / metaMensal) * 100)}%`,
-                }}
-              ></div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-pink-500 to-pink-600 text-white p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-2">Horas esta Semana</h3>
-            <p className="text-3xl font-bold">{formatarHoras(horasSemana)}</p>
-            <p className="text-pink-100">Meta: {formatarHoras(metaSemanal)}</p>
-            <div className="w-full bg-pink-400 rounded-full h-2 mt-2">
-              <div
-                className="bg-white h-2 rounded-full transition-all duration-500"
-                style={{
-                  width: `${Math.min(100, (horasSemana / metaSemanal) * 100)}%`,
-                }}
-              ></div>
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-2">Restante esta Semana</h3>
-            <p className="text-3xl font-bold">
-              {formatarHoras(Math.max(0, metaSemanal - horasSemana))}
-            </p>
-            <p className="text-blue-100">
-              {horasSemana >= metaSemanal
-                ? "Meta atingida! 🎉"
-                : "Para completar"}
-            </p>
-          </div>
+      {isLoading ? (
+        <div className="flex justify-center items-center min-h-screen bg-white rounded-2xl shadow-xl p-8 max-w-7xl  mx-auto ">
+          <Loader2 className="animate-spin text-purple-600" />
         </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-7xl  mx-auto ">
+          <h1 className="text-3xl font-bold text-gray-800 mb-8 flex items-center gap-3">
+            <Clock className="text-purple-600" />
+            Controle de Ponto - Estágio
+          </h1>
 
-        {/* Formulário de registro manual */}
-        <div className="bg-gray-50 rounded-xl p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <Plus className="text-gray-600" />
-            Registrar Dia de Trabalho
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Data
-              </label>
-              <input
-                type="date"
-                value={
-                  registroManual.dataDoBrasil
-                    ? registroManual.dataDoBrasil.split("/").reverse().join("-")
-                    : ""
-                }
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    dataDoBrasil: e.target.value
-                      ? e.target.value.split("-").reverse().join("/")
-                      : "",
-                  })
-                }
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Entrada
-              </label>
-              <input
-                type="time"
-                value={registroManual.entrada}
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    entrada: e.target.value,
-                  })
-                }
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Saída Almoço
-              </label>
-              <input
-                type="time"
-                value={registroManual.saidaAlmoco}
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    saidaAlmoco: e.target.value,
-                  })
-                }
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Volta Almoço
-              </label>
-              <input
-                type="time"
-                value={registroManual.voltaAlmoco}
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    voltaAlmoco: e.target.value,
-                  })
-                }
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Saída Final
-              </label>
-              <input
-                type="time"
-                value={registroManual.saida}
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    saida: e.target.value,
-                  })
-                }
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ou Horas Direto
-              </label>
-              <input
-                type="time"
-                value={registroManual.horasManual}
-                onChange={(e) =>
-                  setRegistroManual({
-                    ...registroManual,
-                    horasManual: e.target.value,
-                  })
-                }
-                placeholder="00:00"
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <button
-            onClick={adicionarRegistroManual}
-            disabled={
-              (!registroManual.entrada || !registroManual.saida) &&
-              !registroManual.horasManual
-            }
-            className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2 shadow-lg"
-          >
-            <Plus size={20} />
-            Adicionar Registro
-          </button>
-        </div>
-
-        {/* Calendário */}
-        <div className="bg-white rounded-xl border border-gray-200">
-          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-            <button
-              onClick={() => navegarMes(-1)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-            >
-              <ChevronLeft size={24} />
-            </button>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              {capitalizeFirstLetter(
-                mesAtual.toLocaleDateString("pt-BR", {
-                  month: "long",
-                  year: "numeric",
-                })
-              )}
-            </h2>
-            <button
-              onClick={() => navegarMes(1)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-            >
-              <ChevronRight size={24} />
-            </button>
-          </div>
-
-          <div className="p-6">
-            {/* Cabeçalho dos dias da semana */}
-            <div className="grid grid-cols-7 gap-2 mb-4">
-              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dia) => (
+          {/* Estatísticas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-xl">
+              <h3 className="text-lg font-semibold mb-2">Horas este Mês</h3>
+              <p className="text-3xl font-bold">{formatarHoras(horasMes)}</p>
+              <p className="text-purple-100">
+                Meta: {formatarHoras(metaMensal)}
+              </p>
+              <div className="w-full bg-purple-400 rounded-full h-2 mt-2">
                 <div
-                  key={dia}
-                  className="text-center text-sm font-semibold text-gray-500 p-2"
-                >
-                  {dia}
-                </div>
-              ))}
+                  className="bg-white h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, (horasMes / metaMensal) * 100)}%`,
+                  }}
+                ></div>
+              </div>
             </div>
 
-            {/* Dias do calendário */}
-            <div className="grid grid-cols-7 gap-2">
-              {dias.map((dia) => {
-                const horasTrabalhadas = obterHorasTrabalhadasDoDia(dia.data);
-                const temRegistro = horasTrabalhadas > 0;
-                const isHoje = dia.data === getDataDoBrasilStr(new Date());
-                const { isFinalDeSemana } = dia;
+            <div className="bg-gradient-to-r from-pink-500 to-pink-600 text-white p-6 rounded-xl">
+              <h3 className="text-lg font-semibold mb-2">Horas esta Semana</h3>
+              <p className="text-3xl font-bold">{formatarHoras(horasSemana)}</p>
+              <p className="text-pink-100">
+                Meta: {formatarHoras(metaSemanal)}
+              </p>
+              <div className="w-full bg-pink-400 rounded-full h-2 mt-2">
+                <div
+                  className="bg-white h-2 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (horasSemana / metaSemanal) * 100
+                    )}%`,
+                  }}
+                ></div>
+              </div>
+            </div>
 
-                return (
-                  <div
-                    key={dia.data}
-                    onClick={() => dia.mesAtual && abrirModal(dia.data)}
-                    className={`
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-xl">
+              <h3 className="text-lg font-semibold mb-2">
+                Restante esta Semana
+              </h3>
+              <p className="text-3xl font-bold">
+                {formatarHoras(Math.max(0, metaSemanal - horasSemana))}
+              </p>
+              <p className="text-blue-100">
+                {horasSemana >= metaSemanal
+                  ? "Meta atingida! 🎉"
+                  : "Para completar"}
+              </p>
+            </div>
+          </div>
+
+          {/* Formulário de registro manual */}
+          <div className="bg-gray-50 rounded-xl p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <Plus className="text-gray-600" />
+              Registrar Dia de Trabalho
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Data
+                </label>
+                <input
+                  type="date"
+                  value={
+                    registroManual.dataDoBrasil
+                      ? registroManual.dataDoBrasil
+                          .split("/")
+                          .reverse()
+                          .join("-")
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      dataDoBrasil: e.target.value
+                        ? e.target.value.split("-").reverse().join("/")
+                        : "",
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Entrada
+                </label>
+                <input
+                  type="time"
+                  value={registroManual.entrada}
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      entrada: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Saída Almoço
+                </label>
+                <input
+                  type="time"
+                  value={registroManual.saidaAlmoco}
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      saidaAlmoco: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Volta Almoço
+                </label>
+                <input
+                  type="time"
+                  value={registroManual.voltaAlmoco}
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      voltaAlmoco: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Saída Final
+                </label>
+                <input
+                  type="time"
+                  value={registroManual.saida}
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      saida: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ou Horas Direto
+                </label>
+                <input
+                  type="time"
+                  value={registroManual.horasManual}
+                  onChange={(e) =>
+                    setRegistroManual({
+                      ...registroManual,
+                      horasManual: e.target.value,
+                    })
+                  }
+                  placeholder="00:00"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={adicionarRegistroManual}
+              disabled={
+                (!registroManual.entrada || !registroManual.saida) &&
+                !registroManual.horasManual
+              }
+              className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2 shadow-lg"
+            >
+              <Plus size={20} />
+              Adicionar Registro
+            </button>
+          </div>
+
+          {/* Calendário */}
+
+          <div className="bg-white rounded-xl border border-gray-200">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <button
+                onClick={() => navegarMes(-1)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                {capitalizeFirstLetter(
+                  mesAtual.toLocaleDateString("pt-BR", {
+                    month: "long",
+                    year: "numeric",
+                  })
+                )}
+              </h2>
+              <button
+                onClick={() => navegarMes(1)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <ChevronRight size={24} />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {/* Cabeçalho dos dias da semana */}
+              <div className="grid grid-cols-7 gap-2 mb-4">
+                {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map(
+                  (dia) => (
+                    <div
+                      key={dia}
+                      className="text-center text-sm font-semibold text-gray-500 p-2"
+                    >
+                      {dia}
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Dias do calendário */}
+              <div className="grid grid-cols-7 gap-2">
+                {dias.map((dia) => {
+                  const horasTrabalhadas = obterHorasTrabalhadasDoDia(dia.data);
+                  const temRegistro = horasTrabalhadas > 0;
+                  const isHoje = dia.data === getDataDoBrasilStr(new Date());
+                  const { isFinalDeSemana } = dia;
+
+                  return (
+                    <div
+                      key={dia.data}
+                      onClick={() => dia.mesAtual && abrirModal(dia.data)}
+                      className={`
                       aspect-square border rounded-lg p-2 cursor-pointer transition-all duration-200
                       ${
                         dia.mesAtual
@@ -605,211 +616,212 @@ export default function Home() {
                       }
                        ${isFinalDeSemana ? "bg-gray-100" : ""}
                     `}
+                    >
+                      <div className="h-full flex flex-col justify-between items-center">
+                        <span
+                          className={`text-md md:text-lg font-bold ${
+                            dia.mesAtual ? "text-gray-800" : "text-gray-400"
+                          }`}
+                        >
+                          {dia.dia}
+                        </span>
+                        {temRegistro ? (
+                          <div className="text-md md:text-lg text-purple-600 font-semibold">
+                            {formatarHoras(horasTrabalhadas)}
+                          </div>
+                        ) : (
+                          <div className="hidden md:block text-md md:text-lg text-gray-400 font-semibold">
+                            -
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Modal */}
+          {modalAberto && (
+            <div className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                  <h3 className="text-xl font-semibold">
+                    Registrar - {formatarData(diaModal)}
+                  </h3>
+                  <button
+                    onClick={fecharModal}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                   >
-                    <div className="h-full flex flex-col justify-between items-center">
-                      <span
-                        className={`text-lg font-bold ${
-                          dia.mesAtual ? "text-gray-800" : "text-gray-400"
-                        }`}
-                      >
-                        {dia.dia}
-                      </span>
-                      {temRegistro ? (
-                        <div className="text-md text-purple-600 font-semibold">
-                          {formatarHoras(horasTrabalhadas)}
-                        </div>
-                      ) : (
-                        <div className="text-md text-gray-400 font-semibold">
-                          -
-                        </div>
-                      )}
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Entrada
+                      </label>
+                      <input
+                        type="time"
+                        value={registroModal.entrada}
+                        onChange={(e) =>
+                          setRegistroModal({
+                            ...registroModal,
+                            entrada: e.target.value,
+                          })
+                        }
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        disabled={!!registroModal.horasManual}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Saída Final
+                      </label>
+                      <input
+                        type="time"
+                        value={registroModal.saida}
+                        onChange={(e) =>
+                          setRegistroModal({
+                            ...registroModal,
+                            saida: e.target.value,
+                          })
+                        }
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        disabled={!!registroModal.horasManual}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Saída Almoço
+                      </label>
+                      <input
+                        type="time"
+                        value={registroModal.saidaAlmoco}
+                        onChange={(e) =>
+                          setRegistroModal({
+                            ...registroModal,
+                            saidaAlmoco: e.target.value,
+                          })
+                        }
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        disabled={!!registroModal.horasManual}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Volta Almoço
+                      </label>
+                      <input
+                        type="time"
+                        value={registroModal.voltaAlmoco}
+                        onChange={(e) =>
+                          setRegistroModal({
+                            ...registroModal,
+                            voltaAlmoco: e.target.value,
+                          })
+                        }
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        disabled={!!registroModal.horasManual}
+                      />
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
 
-        {/* Modal */}
-        {modalAberto && (
-          <div className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-                <h3 className="text-xl font-semibold">
-                  Registrar - {formatarData(diaModal)}
-                </h3>
-                <button
-                  onClick={fecharModal}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div>
+                  <div className="mb-6">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Entrada
+                      Ou informar horas trabalhadas diretamente
                     </label>
                     <input
                       type="time"
-                      value={registroModal.entrada}
+                      value={registroModal.horasManual}
                       onChange={(e) =>
                         setRegistroModal({
                           ...registroModal,
-                          entrada: e.target.value,
+                          horasManual: e.target.value,
                         })
                       }
+                      placeholder="00:00"
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      disabled={!!registroModal.horasManual}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Saída Final
-                    </label>
-                    <input
-                      type="time"
-                      value={registroModal.saida}
-                      onChange={(e) =>
-                        setRegistroModal({
-                          ...registroModal,
-                          saida: e.target.value,
-                        })
-                      }
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      disabled={!!registroModal.horasManual}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Saída Almoço
-                    </label>
-                    <input
-                      type="time"
-                      value={registroModal.saidaAlmoco}
-                      onChange={(e) =>
-                        setRegistroModal({
-                          ...registroModal,
-                          saidaAlmoco: e.target.value,
-                        })
-                      }
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      disabled={!!registroModal.horasManual}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Volta Almoço
-                    </label>
-                    <input
-                      type="time"
-                      value={registroModal.voltaAlmoco}
-                      onChange={(e) =>
-                        setRegistroModal({
-                          ...registroModal,
-                          voltaAlmoco: e.target.value,
-                        })
-                      }
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      disabled={!!registroModal.horasManual}
-                    />
-                  </div>
-                </div>
-
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Ou informar horas trabalhadas diretamente
-                  </label>
-                  <input
-                    type="time"
-                    value={registroModal.horasManual}
-                    onChange={(e) =>
-                      setRegistroModal({
-                        ...registroModal,
-                        horasManual: e.target.value,
-                      })
-                    }
-                    placeholder="00:00"
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="flex gap-3 justify-between">
-                  {registros.find((r) => r.dataDoBrasil === diaModal) && (
-                    <button
-                      onClick={() => excluirRegistro(diaModal)}
-                      className="self-start px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                    >
-                      <Trash2 size={16} />
-                      Excluir
-                    </button>
-                  )}
-                  <div className="flex gap-3 justify-end">
-                    <button
-                      onClick={fecharModal}
-                      className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={salvarRegistroModal}
-                      disabled={
-                        (!registroModal.entrada || !registroModal.saida) &&
-                        !registroModal.horasManual
-                      }
-                      className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2"
-                    >
-                      <Save size={16} />
-                      Salvar
-                    </button>
+                  <div className="flex gap-3 justify-between">
+                    {registros.find((r) => r.dataDoBrasil === diaModal) && (
+                      <button
+                        onClick={() => excluirRegistro(diaModal)}
+                        className="self-start px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Trash2 size={16} />
+                        Excluir
+                      </button>
+                    )}
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        onClick={fecharModal}
+                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={salvarRegistroModal}
+                        disabled={
+                          (!registroModal.entrada || !registroModal.saida) &&
+                          !registroModal.horasManual
+                        }
+                        className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2"
+                      >
+                        <Save size={16} />
+                        Salvar
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Configurações de metas */}
-        <div className="mt-8 bg-gray-50 rounded-xl p-6">
-          <h3 className="text-lg font-semibold mb-4">Configurar Metas</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Meta Mensal (horas)
-              </label>
-              <input
-                type="number"
-                value={metaMensal}
-                onChange={(e) => {
-                  setMetaMensal(Number(e.target.value));
-                  localStorage.setItem("metaMensal", e.target.value);
-                }}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Meta Semanal (horas)
-              </label>
-              <input
-                type="number"
-                value={metaSemanal}
-                onChange={(e) => {
-                  setMetaSemanal(Number(e.target.value));
-                  localStorage.setItem("metaSemanal", e.target.value);
-                }}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
+          {/* Configurações de metas */}
+          <div className="mt-8 bg-gray-50 rounded-xl p-6">
+            <h3 className="text-lg font-semibold mb-4">Configurar Metas</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Meta Mensal (horas)
+                </label>
+                <input
+                  type="number"
+                  value={metaMensal}
+                  onChange={(e) => {
+                    setMetaMensal(Number(e.target.value));
+                    localStorage.setItem("metaMensal", e.target.value);
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Meta Semanal (horas)
+                </label>
+                <input
+                  type="number"
+                  value={metaSemanal}
+                  onChange={(e) => {
+                    setMetaSemanal(Number(e.target.value));
+                    localStorage.setItem("metaSemanal", e.target.value);
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
