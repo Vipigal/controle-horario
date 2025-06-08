@@ -1,30 +1,54 @@
 "use client";
-import React, { useState, useEffect } from "react";
 import {
-  Calendar,
+  ChevronLeft,
+  ChevronRight,
   Clock,
-  Edit3,
+  Plus,
   Save,
   Trash2,
-  Plus,
-  Play,
-  Pause,
-  Square,
-  AlertCircle,
+  X,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Registro } from "../types";
+import {
+  capitalizeFirstLetter,
+  converterDecimalParaHorasString,
+  converterHorasStringParaDecimal,
+  getDataDoBrasilStr,
+  parseDataDoBrasil,
+} from "@/utils";
+
+// Tipo auxiliar para edição
+export type RegistroEditavel = Partial<Registro> & {
+  horasManual?: string;
+};
 
 export default function Home() {
-  const [registros, setRegistros] = useState([]);
-  const [pontoAtual, setPontoAtual] = useState(null);
-  const [metaMensal, setMetaMensal] = useState(132);
-  const [metaSemanal, setMetaSemanal] = useState(30);
-  const [editando, setEditando] = useState(null);
-  const [mostrarCorrecao, setMostrarCorrecao] = useState(false);
-  const [correcaoTipo, setCorrecaoTipo] = useState("");
+  // Estado principal
+  const [registros, setRegistros] = useState<Registro[]>([]);
 
-  // Estados para registro manual
-  const [registroManual, setRegistroManual] = useState({
-    data: new Date().toISOString().split("T")[0],
+  // Metas
+  const [metaMensal, setMetaMensal] = useState<number>(132);
+  const [metaSemanal, setMetaSemanal] = useState<number>(30);
+
+  // Calendário
+  const [mesAtual, setMesAtual] = useState(new Date());
+
+  // Modal
+  const [modalAberto, setModalAberto] = useState(false);
+  const [diaModal, setDiaModal] = useState<string>("");
+  const [registroModal, setRegistroModal] = useState<RegistroEditavel>({
+    dataDoBrasil: "",
+    entrada: "",
+    saidaAlmoco: "",
+    voltaAlmoco: "",
+    saida: "",
+    horasManual: "",
+  });
+
+  // Registro manual
+  const [registroManual, setRegistroManual] = useState<RegistroEditavel>({
+    dataDoBrasil: getDataDoBrasilStr(new Date()),
     entrada: "",
     saidaAlmoco: "",
     voltaAlmoco: "",
@@ -36,9 +60,7 @@ export default function Home() {
     const dadosSalvos = JSON.parse(
       localStorage.getItem("horasEstagio") || "[]"
     );
-    const pontoSalvo = JSON.parse(localStorage.getItem("pontoAtual") || "null");
     setRegistros(dadosSalvos);
-    setPontoAtual(pontoSalvo);
 
     const metaMensalSalva = localStorage.getItem("metaMensal");
     const metaSemanalSalva = localStorage.getItem("metaSemanal");
@@ -50,93 +72,13 @@ export default function Home() {
     localStorage.setItem("horasEstagio", JSON.stringify(registros));
   }, [registros]);
 
-  useEffect(() => {
-    localStorage.setItem("pontoAtual", JSON.stringify(pontoAtual));
-  }, [pontoAtual]);
-
-  const obterHoraAtual = () => {
-    const agora = new Date();
-    return agora.toTimeString().slice(0, 5);
-  };
-
-  const obterDataAtual = () => {
-    return new Date().toISOString().split("T")[0];
-  };
-
-  const baterPonto = () => {
-    const agora = obterHoraAtual();
-    const hoje = obterDataAtual();
-
-    if (!pontoAtual || pontoAtual.data !== hoje) {
-      // Primeira batida do dia - Entrada
-      setPontoAtual({
-        data: hoje,
-        entrada: agora,
-        status: "trabalhando",
-        proximaAcao: "Saída para Almoço",
-      });
-    } else {
-      const novoStatus = { ...pontoAtual };
-
-      switch (pontoAtual.status) {
-        case "trabalhando":
-          // Segunda batida - Saída para almoço
-          novoStatus.saidaAlmoco = agora;
-          novoStatus.status = "almoco";
-          novoStatus.proximaAcao = "Volta do Almoço";
-          break;
-
-        case "almoco":
-          // Terceira batida - Volta do almoço
-          novoStatus.voltaAlmoco = agora;
-          novoStatus.status = "trabalhando";
-          novoStatus.proximaAcao = "Saída Final";
-          break;
-
-        case "trabalhando":
-          if (novoStatus.voltaAlmoco) {
-            // Quarta batida - Saída final
-            novoStatus.saida = agora;
-            novoStatus.status = "finalizado";
-            novoStatus.proximaAcao = "Dia Finalizado";
-
-            // Calcular e salvar o registro completo
-            const horasCalculadas = calcularHorasCompletas(
-              novoStatus.entrada,
-              novoStatus.saidaAlmoco,
-              novoStatus.voltaAlmoco,
-              novoStatus.saida
-            );
-
-            const novoRegistro = {
-              id: Date.now(),
-              data: hoje,
-              entrada: novoStatus.entrada,
-              saidaAlmoco: novoStatus.saidaAlmoco,
-              voltaAlmoco: novoStatus.voltaAlmoco,
-              saida: novoStatus.saida,
-              horas: horasCalculadas,
-              horasManual: false,
-            };
-
-            setRegistros((prev) =>
-              [novoRegistro, ...prev].sort(
-                (a, b) => new Date(b.data) - new Date(a.data)
-              )
-            );
-
-            // Limpar ponto atual no próximo dia
-            setTimeout(() => setPontoAtual(null), 1000);
-          }
-          break;
-      }
-
-      setPontoAtual(novoStatus);
-    }
-  };
-
-  const calcularHorasCompletas = (entrada, saidaAlmoco, voltaAlmoco, saida) => {
-    if (!entrada || !saida) return 0;
+  const calcularHorasCompletas = (
+    entrada?: string,
+    saidaAlmoco?: string,
+    voltaAlmoco?: string,
+    saida?: string
+  ): string => {
+    if (!entrada || !saida) return "00:00";
 
     const [hEntrada, mEntrada] = entrada.split(":").map(Number);
     const [hSaida, mSaida] = saida.split(":").map(Number);
@@ -151,103 +93,55 @@ export default function Home() {
 
     const totalMinutos =
       hSaida * 60 + mSaida - (hEntrada * 60 + mEntrada) - minutosAlmoco;
-    return Math.max(0, totalMinutos / 60);
-  };
-
-  const corrigirUltimoPonto = (tipo, valor) => {
-    if (!pontoAtual) return;
-
-    const pontoCorrigido = { ...pontoAtual };
-
-    switch (tipo) {
-      case "duracaoAlmoco":
-        if (pontoAtual.saidaAlmoco) {
-          const [hSaida, mSaida] = pontoAtual.saidaAlmoco
-            .split(":")
-            .map(Number);
-          const minutosVolta = hSaida * 60 + mSaida + parseInt(valor);
-          const hVolta = Math.floor(minutosVolta / 60);
-          const mVolta = minutosVolta % 60;
-          pontoCorrigido.voltaAlmoco = `${hVolta
-            .toString()
-            .padStart(2, "0")}:${mVolta.toString().padStart(2, "0")}`;
-          pontoCorrigido.status = "trabalhando";
-          pontoCorrigido.proximaAcao = "Saída Final";
-        }
-        break;
-
-      case "horarioSaida":
-        pontoCorrigido.saida = valor;
-        pontoCorrigido.status = "finalizado";
-        pontoCorrigido.proximaAcao = "Dia Finalizado";
-
-        // Salvar registro
-        const horasCalculadas = calcularHorasCompletas(
-          pontoCorrigido.entrada,
-          pontoCorrigido.saidaAlmoco,
-          pontoCorrigido.voltaAlmoco,
-          pontoCorrigido.saida
-        );
-
-        const novoRegistro = {
-          id: Date.now(),
-          data: pontoCorrigido.data,
-          entrada: pontoCorrigido.entrada,
-          saidaAlmoco: pontoCorrigido.saidaAlmoco,
-          voltaAlmoco: pontoCorrigido.voltaAlmoco,
-          saida: pontoCorrigido.saida,
-          horas: horasCalculadas,
-          horasManual: false,
-        };
-
-        setRegistros((prev) =>
-          [novoRegistro, ...prev].sort(
-            (a, b) => new Date(b.data) - new Date(a.data)
-          )
-        );
-        setPontoAtual(null);
-        break;
-    }
-
-    setPontoAtual(pontoCorrigido);
-    setMostrarCorrecao(false);
+    return converterDecimalParaHorasString(Math.max(0, totalMinutos / 60));
   };
 
   const adicionarRegistroManual = () => {
-    const horas = registroManual.horasManual
-      ? Number(registroManual.horasManual)
-      : calcularHorasCompletas(
-          registroManual.entrada,
-          registroManual.saidaAlmoco,
-          registroManual.voltaAlmoco,
-          registroManual.saida
-        );
+    const horasTrabalhadas: string =
+      registroManual.horasManual ||
+      calcularHorasCompletas(
+        registroManual.entrada,
+        registroManual.saidaAlmoco,
+        registroManual.voltaAlmoco,
+        registroManual.saida
+      );
 
-    if (horas <= 0) {
+    const horasNumber = converterHorasStringParaDecimal(horasTrabalhadas);
+
+    if (horasNumber <= 0) {
       alert(
         "Por favor, preencha os horários corretamente ou insira as horas manualmente."
       );
       return;
     }
 
-    const registro = {
-      id: Date.now(),
-      data: registroManual.data,
+    if (!registroManual.dataDoBrasil) {
+      alert("Por favor, preencha a data do registro.");
+      return;
+    }
+
+    const registro: Registro = {
+      dataDoBrasil: registroManual.dataDoBrasil,
       entrada: registroManual.entrada,
       saidaAlmoco: registroManual.saidaAlmoco,
       voltaAlmoco: registroManual.voltaAlmoco,
       saida: registroManual.saida,
-      horas: horas,
-      horasManual: !!registroManual.horasManual,
+      horasTrabalhadas: horasTrabalhadas,
     };
 
     setRegistros(
-      [registro, ...registros].sort(
-        (a, b) => new Date(b.data) - new Date(a.data)
+      [
+        registro,
+        ...registros.filter((r) => r.dataDoBrasil !== registro.dataDoBrasil),
+      ].sort(
+        (a, b) =>
+          parseDataDoBrasil(b.dataDoBrasil).getTime() -
+          parseDataDoBrasil(a.dataDoBrasil).getTime()
       )
     );
+
     setRegistroManual({
-      data: new Date().toISOString().split("T")[0],
+      dataDoBrasil: getDataDoBrasilStr(new Date()),
       entrada: "",
       saidaAlmoco: "",
       voltaAlmoco: "",
@@ -256,37 +150,96 @@ export default function Home() {
     });
   };
 
-  const editarRegistro = (id, dadosEditados) => {
-    const horas = dadosEditados.horasManual
-      ? Number(dadosEditados.horasManual)
-      : calcularHorasCompletas(
-          dadosEditados.entrada,
-          dadosEditados.saidaAlmoco,
-          dadosEditados.voltaAlmoco,
-          dadosEditados.saida
-        );
+  const salvarRegistroModal = () => {
+    const horasTrabalhadas =
+      registroModal.horasManual ||
+      calcularHorasCompletas(
+        registroModal.entrada,
+        registroModal.saidaAlmoco,
+        registroModal.voltaAlmoco,
+        registroModal.saida
+      );
+
+    if (converterHorasStringParaDecimal(horasTrabalhadas) <= 0) {
+      alert(
+        "Por favor, preencha os horários corretamente ou insira as horas manualmente."
+      );
+      return;
+    }
+
+    const registroAtualizado: Registro = {
+      dataDoBrasil: diaModal,
+      entrada: registroModal.entrada || "",
+      saidaAlmoco: registroModal.saidaAlmoco || "",
+      voltaAlmoco: registroModal.voltaAlmoco || "",
+      saida: registroModal.saida || "",
+      horasTrabalhadas: horasTrabalhadas,
+    };
+
+    const registroExistente = registros.find(
+      (r) => r.dataDoBrasil === diaModal
+    );
+
+    let registrosAtualizados: Registro[];
+
+    if (registroExistente) {
+      registrosAtualizados = registros.map((reg) =>
+        reg.dataDoBrasil === diaModal ? registroAtualizado : reg
+      );
+    } else {
+      registrosAtualizados = [registroAtualizado, ...registros];
+    }
 
     setRegistros(
-      registros.map((reg) =>
-        reg.id === id
-          ? {
-              ...dadosEditados,
-              horas,
-              horasManual: !!dadosEditados.horasManual,
-            }
-          : reg
+      registrosAtualizados.sort(
+        (a, b) =>
+          parseDataDoBrasil(b.dataDoBrasil).getTime() -
+          parseDataDoBrasil(a.dataDoBrasil).getTime()
       )
     );
-    setEditando(null);
+
+    fecharModal();
   };
 
-  const excluirRegistro = (id) => {
-    setRegistros(registros.filter((reg) => reg.id !== id));
+  const excluirRegistro = (data: string) => {
+    setRegistros(registros.filter((reg) => reg.dataDoBrasil !== data));
+    fecharModal();
+  };
+
+  const abrirModal = (data: string) => {
+    const registroExistente = registros.find((r) => r.dataDoBrasil === data);
+
+    setDiaModal(data);
+    setRegistroModal({
+      dataDoBrasil: data,
+      entrada: registroExistente?.entrada || "",
+      saidaAlmoco: registroExistente?.saidaAlmoco || "",
+      voltaAlmoco: registroExistente?.voltaAlmoco || "",
+      saida: registroExistente?.saida || "",
+      horasManual:
+        registroExistente && !registroExistente.entrada
+          ? registroExistente.horasTrabalhadas
+          : "",
+    });
+    setModalAberto(true);
+  };
+
+  const fecharModal = () => {
+    setModalAberto(false);
+    setDiaModal("");
+    setRegistroModal({
+      dataDoBrasil: "",
+      entrada: "",
+      saidaAlmoco: "",
+      voltaAlmoco: "",
+      saida: "",
+      horasManual: "",
+    });
   };
 
   const obterEstatisticas = () => {
     const hoje = new Date();
-    const mesAtual = hoje.getMonth();
+    const mesAtualNum = hoje.getMonth();
     const anoAtual = hoje.getFullYear();
 
     const inicioSemana = new Date(hoje);
@@ -296,48 +249,114 @@ export default function Home() {
 
     const horasMes = registros
       .filter((reg) => {
-        const dataReg = new Date(reg.data);
+        const dataReg = parseDataDoBrasil(reg.dataDoBrasil);
         return (
-          dataReg.getMonth() === mesAtual && dataReg.getFullYear() === anoAtual
+          dataReg.getMonth() === mesAtualNum &&
+          dataReg.getFullYear() === anoAtual
         );
       })
-      .reduce((total, reg) => total + reg.horas, 0);
+      .reduce(
+        (total, reg) =>
+          total + converterHorasStringParaDecimal(reg.horasTrabalhadas),
+        0
+      );
 
     const horasSemana = registros
-      .filter((reg) => new Date(reg.data) >= inicioSemana)
-      .reduce((total, reg) => total + reg.horas, 0);
+      .filter((reg) => parseDataDoBrasil(reg.dataDoBrasil) >= inicioSemana)
+      .reduce(
+        (total, reg) =>
+          total + converterHorasStringParaDecimal(reg.horasTrabalhadas),
+        0
+      );
 
     return { horasMes, horasSemana };
   };
 
-  const { horasMes, horasSemana } = obterEstatisticas();
-
-  const formatarData = (data) => {
-    return new Date(data + "T00:00:00").toLocaleDateString("pt-BR");
-  };
-
-  const formatarHoras = (horas) => {
+  const formatarHoras = (horas: number): string => {
     const h = Math.floor(horas);
     const m = Math.round((horas - h) * 60);
-    return `${h}h${m > 0 ? ` ${m}min` : ""}`;
+    return `${h}:${m > 0 && m < 10 ? `0${m}` : m === 0 ? "00" : m}h`;
   };
 
-  const obterStatusPonto = () => {
-    if (!pontoAtual) return { cor: "gray", icone: Clock, texto: "Aguardando" };
+  const formatarData = (data: string): string => {
+    return data;
+  };
 
-    switch (pontoAtual.status) {
-      case "trabalhando":
-        return { cor: "green", icone: Play, texto: "Trabalhando" };
-      case "almoco":
-        return { cor: "orange", icone: Pause, texto: "Almoço" };
-      case "finalizado":
-        return { cor: "blue", icone: Square, texto: "Finalizado" };
-      default:
-        return { cor: "gray", icone: Clock, texto: "Aguardando" };
+  // Funções do calendário
+  const obterDiasDoMes = () => {
+    const ano = mesAtual.getFullYear();
+    const mes = mesAtual.getMonth();
+
+    const primeiroDiaDoMes = new Date(Date.UTC(ano, mes, 1));
+    const dias = [];
+
+    // Dias do mês anterior para preencher a primeira semana
+    const diaDaSemanaPrimeiroDia = primeiroDiaDoMes.getUTCDay(); // 0 = Dom, 1 = Seg...
+    for (let i = diaDaSemanaPrimeiroDia - 1; i >= 0; i--) {
+      const dia = new Date(Date.UTC(ano, mes, -i));
+      const diaDaSemana = dia.getUTCDay();
+      dias.push({
+        dia: dia.getUTCDate(),
+        data: `${String(dia.getUTCDate()).padStart(2, "0")}/${String(
+          dia.getUTCMonth() + 1
+        ).padStart(2, "0")}/${dia.getUTCFullYear()}`,
+        mesAtual: false,
+        isFinalDeSemana: diaDaSemana === 0 || diaDaSemana === 6,
+      });
     }
+
+    // Dias do mês atual
+    const ultimoDiaDoMes = new Date(Date.UTC(ano, mes + 1, 0));
+    for (let i = 1; i <= ultimoDiaDoMes.getUTCDate(); i++) {
+      const dia = new Date(Date.UTC(ano, mes, i));
+      const diaDaSemana = dia.getUTCDay();
+      dias.push({
+        dia: i,
+        data: `${String(i).padStart(2, "0")}/${String(mes + 1).padStart(
+          2,
+          "0"
+        )}/${ano}`,
+        mesAtual: true,
+        isFinalDeSemana: diaDaSemana === 0 || diaDaSemana === 6,
+      });
+    }
+
+    // Dias do próximo mês para preencher a última semana
+    const totalDiasMostrados = dias.length;
+    const diasRestantes =
+      totalDiasMostrados % 7 === 0 ? 0 : 7 - (totalDiasMostrados % 7);
+
+    for (let i = 1; i <= diasRestantes; i++) {
+      const dia = new Date(Date.UTC(ano, mes + 1, i));
+      const diaDaSemana = dia.getUTCDay();
+      dias.push({
+        dia: i,
+        data: `${String(dia.getUTCDate()).padStart(2, "0")}/${String(
+          dia.getUTCMonth() + 1
+        ).padStart(2, "0")}/${dia.getUTCFullYear()}`,
+        mesAtual: false,
+        isFinalDeSemana: diaDaSemana === 0 || diaDaSemana === 6,
+      });
+    }
+
+    return dias;
   };
 
-  const statusPonto = obterStatusPonto();
+  const obterHorasTrabalhadasDoDia = (data: string): number => {
+    const registro = registros.find((r) => r.dataDoBrasil === data);
+    return registro
+      ? converterHorasStringParaDecimal(registro.horasTrabalhadas)
+      : 0;
+  };
+
+  const navegarMes = (direcao: number) => {
+    setMesAtual(
+      new Date(mesAtual.getFullYear(), mesAtual.getMonth() + direcao, 1)
+    );
+  };
+
+  const { horasMes, horasSemana } = obterEstatisticas();
+  const dias = obterDiasDoMes();
 
   return (
     <div className="p-6 bg-gradient-to-br from-purple-50 to-pink-50 min-h-screen">
@@ -346,158 +365,6 @@ export default function Home() {
           <Clock className="text-purple-600" />
           Controle de Ponto - Estágio
         </h1>
-
-        {/* Seção de Bater Ponto */}
-        <div
-          className={`bg-gradient-to-r from-${statusPonto.cor}-500 to-${statusPonto.cor}-600 text-white rounded-2xl p-8 mb-8 shadow-lg`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold mb-2 flex items-center gap-3">
-                <statusPonto.icone size={28} />
-                {statusPonto.texto}
-              </h2>
-              {pontoAtual && (
-                <div className="space-y-1 text-lg">
-                  <p>📍 Entrada: {pontoAtual.entrada}</p>
-                  {pontoAtual.saidaAlmoco && (
-                    <p>🍽️ Saída Almoço: {pontoAtual.saidaAlmoco}</p>
-                  )}
-                  {pontoAtual.voltaAlmoco && (
-                    <p>🔄 Volta Almoço: {pontoAtual.voltaAlmoco}</p>
-                  )}
-                  {pontoAtual.saida && <p>🏠 Saída: {pontoAtual.saida}</p>}
-                </div>
-              )}
-              {pontoAtual && pontoAtual.status !== "finalizado" && (
-                <p className="mt-3 text-lg font-medium">
-                  Próxima ação: {pontoAtual.proximaAcao}
-                </p>
-              )}
-            </div>
-
-            <div className="text-center">
-              <div className="text-4xl font-mono mb-4">
-                {new Date().toLocaleTimeString("pt-BR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </div>
-
-              {pontoAtual?.status !== "finalizado" && (
-                <button
-                  onClick={baterPonto}
-                  className="bg-white text-gray-800 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all duration-200 shadow-lg transform hover:scale-105"
-                >
-                  🕐 Bater Ponto
-                </button>
-              )}
-
-              {pontoAtual && pontoAtual.status !== "finalizado" && (
-                <div className="mt-4 space-x-2">
-                  <button
-                    onClick={() => {
-                      setCorrecaoTipo("duracaoAlmoco");
-                      setMostrarCorrecao(true);
-                    }}
-                    className="bg-yellow-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-yellow-600 transition-all"
-                    disabled={!pontoAtual.saidaAlmoco}
-                  >
-                    Corrigir Almoço
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCorrecaoTipo("horarioSaida");
-                      setMostrarCorrecao(true);
-                    }}
-                    className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-600 transition-all"
-                    disabled={!pontoAtual.voltaAlmoco}
-                  >
-                    Definir Saída
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Modal de Correção */}
-        {mostrarCorrecao && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-xl shadow-xl max-w-md w-full mx-4">
-              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <AlertCircle className="text-orange-500" />
-                Correção de Ponto
-              </h3>
-
-              {correcaoTipo === "duracaoAlmoco" && (
-                <div>
-                  <p className="mb-4">
-                    Quanto tempo durou seu almoço? (minutos)
-                  </p>
-                  <input
-                    type="number"
-                    placeholder="60"
-                    className="w-full p-3 border border-gray-300 rounded-lg mb-4"
-                    onKeyPress={(e) => {
-                      if (e.key === "Enter") {
-                        corrigirUltimoPonto("duracaoAlmoco", e.target.value);
-                      }
-                    }}
-                    id="duracaoAlmoco"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        const valor =
-                          document.getElementById("duracaoAlmoco").value;
-                        if (valor) corrigirUltimoPonto("duracaoAlmoco", valor);
-                      }}
-                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex-1"
-                    >
-                      Corrigir
-                    </button>
-                    <button
-                      onClick={() => setMostrarCorrecao(false)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 flex-1"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {correcaoTipo === "horarioSaida" && (
-                <div>
-                  <p className="mb-4">Que horas você saiu?</p>
-                  <input
-                    type="time"
-                    className="w-full p-3 border border-gray-300 rounded-lg mb-4"
-                    id="horarioSaida"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        const valor =
-                          document.getElementById("horarioSaida").value;
-                        if (valor) corrigirUltimoPonto("horarioSaida", valor);
-                      }}
-                      className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex-1"
-                    >
-                      Corrigir
-                    </button>
-                    <button
-                      onClick={() => setMostrarCorrecao(false)}
-                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 flex-1"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Estatísticas */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -530,12 +397,14 @@ export default function Home() {
           </div>
 
           <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-6 rounded-xl">
-            <h3 className="text-lg font-semibold mb-2">Restante no Mês</h3>
+            <h3 className="text-lg font-semibold mb-2">Restante esta Semana</h3>
             <p className="text-3xl font-bold">
-              {formatarHoras(Math.max(0, metaMensal - horasMes))}
+              {formatarHoras(Math.max(0, metaSemanal - horasSemana))}
             </p>
             <p className="text-blue-100">
-              {horasMes >= metaMensal ? "Meta atingida! 🎉" : "Para completar"}
+              {horasSemana >= metaSemanal
+                ? "Meta atingida! 🎉"
+                : "Para completar"}
             </p>
           </div>
         </div>
@@ -544,7 +413,7 @@ export default function Home() {
         <div className="bg-gray-50 rounded-xl p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Plus className="text-gray-600" />
-            Registrar Dia Manualmente
+            Registrar Dia de Trabalho
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
@@ -554,9 +423,18 @@ export default function Home() {
               </label>
               <input
                 type="date"
-                value={registroManual.data}
+                value={
+                  registroManual.dataDoBrasil
+                    ? registroManual.dataDoBrasil.split("/").reverse().join("-")
+                    : ""
+                }
                 onChange={(e) =>
-                  setRegistroManual({ ...registroManual, data: e.target.value })
+                  setRegistroManual({
+                    ...registroManual,
+                    dataDoBrasil: e.target.value
+                      ? e.target.value.split("-").reverse().join("/")
+                      : "",
+                  })
                 }
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
@@ -635,8 +513,7 @@ export default function Home() {
                 Ou Horas Direto
               </label>
               <input
-                type="number"
-                step="0.5"
+                type="time"
                 value={registroManual.horasManual}
                 onChange={(e) =>
                   setRegistroManual({
@@ -644,7 +521,7 @@ export default function Home() {
                     horasManual: e.target.value,
                   })
                 }
-                placeholder="6.0"
+                placeholder="00:00"
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
@@ -652,106 +529,251 @@ export default function Home() {
 
           <button
             onClick={adicionarRegistroManual}
-            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2 shadow-lg"
+            disabled={
+              (!registroManual.entrada || !registroManual.saida) &&
+              !registroManual.horasManual
+            }
+            className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2 shadow-lg"
           >
             <Plus size={20} />
             Adicionar Registro
           </button>
         </div>
 
-        {/* Lista de registros */}
+        {/* Calendário */}
         <div className="bg-white rounded-xl border border-gray-200">
-          <h2 className="text-xl font-semibold p-6 border-b border-gray-200 flex items-center gap-2">
-            <Calendar className="text-gray-600" />
-            Histórico de Registros
-          </h2>
+          <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+            <button
+              onClick={() => navegarMes(-1)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              {capitalizeFirstLetter(
+                mesAtual.toLocaleDateString("pt-BR", {
+                  month: "long",
+                  year: "numeric",
+                })
+              )}
+            </h2>
+            <button
+              onClick={() => navegarMes(1)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Data
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Entrada
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Saída Almoço
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Volta Almoço
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Saída
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Total
-                  </th>
-                  <th className="text-left p-4 font-semibold text-gray-700">
-                    Ações
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {registros.map((registro) => (
-                  <tr
-                    key={registro.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
+          <div className="p-6">
+            {/* Cabeçalho dos dias da semana */}
+            <div className="grid grid-cols-7 gap-2 mb-4">
+              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dia) => (
+                <div
+                  key={dia}
+                  className="text-center text-sm font-semibold text-gray-500 p-2"
+                >
+                  {dia}
+                </div>
+              ))}
+            </div>
+
+            {/* Dias do calendário */}
+            <div className="grid grid-cols-7 gap-2">
+              {dias.map((dia) => {
+                const horasTrabalhadas = obterHorasTrabalhadasDoDia(dia.data);
+                const temRegistro = horasTrabalhadas > 0;
+                const isHoje = dia.data === getDataDoBrasilStr(new Date());
+                const { isFinalDeSemana } = dia;
+
+                return (
+                  <div
+                    key={dia.data}
+                    onClick={() => dia.mesAtual && abrirModal(dia.data)}
+                    className={`
+                      aspect-square border rounded-lg p-2 cursor-pointer transition-all duration-200
+                      ${
+                        dia.mesAtual
+                          ? "hover:bg-gray-50"
+                          : "text-gray-300 cursor-default"
+                      }
+                      ${isHoje ? "ring-2 ring-blue-500" : ""}
+                      ${
+                        temRegistro
+                          ? "bg-gradient-to-br from-purple-100 to-pink-100 border-purple-200"
+                          : "border-gray-200"
+                      }
+                       ${isFinalDeSemana ? "bg-gray-100" : ""}
+                    `}
                   >
-                    {editando === registro.id ? (
-                      <EditarLinha
-                        registro={registro}
-                        onSave={(dados) => editarRegistro(registro.id, dados)}
-                        onCancel={() => setEditando(null)}
-                      />
-                    ) : (
-                      <>
-                        <td className="p-4">{formatarData(registro.data)}</td>
-                        <td className="p-4">
-                          {registro.horasManual ? "-" : registro.entrada}
-                        </td>
-                        <td className="p-4">
-                          {registro.horasManual ? "-" : registro.saidaAlmoco}
-                        </td>
-                        <td className="p-4">
-                          {registro.horasManual ? "-" : registro.voltaAlmoco}
-                        </td>
-                        <td className="p-4">
-                          {registro.horasManual ? "-" : registro.saida}
-                        </td>
-                        <td className="p-4 font-semibold text-purple-600">
-                          {formatarHoras(registro.horas)}
-                          {registro.horasManual && (
-                            <span className="text-xs text-gray-500 ml-1">
-                              (manual)
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setEditando(registro.id)}
-                              className="text-blue-600 hover:text-blue-800 p-1"
-                            >
-                              <Edit3 size={16} />
-                            </button>
-                            <button
-                              onClick={() => excluirRegistro(registro.id)}
-                              className="text-red-600 hover:text-red-800 p-1"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    <div className="h-full flex flex-col justify-between items-center">
+                      <span
+                        className={`text-lg font-bold ${
+                          dia.mesAtual ? "text-gray-800" : "text-gray-400"
+                        }`}
+                      >
+                        {dia.dia}
+                      </span>
+                      {temRegistro ? (
+                        <div className="text-md text-purple-600 font-semibold">
+                          {formatarHoras(horasTrabalhadas)}
+                        </div>
+                      ) : (
+                        <div className="text-md text-gray-400 font-semibold">
+                          -
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
+
+        {/* Modal */}
+        {modalAberto && (
+          <div className="fixed inset-0 bg-gray-500/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                <h3 className="text-xl font-semibold">
+                  Registrar - {formatarData(diaModal)}
+                </h3>
+                <button
+                  onClick={fecharModal}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Entrada
+                    </label>
+                    <input
+                      type="time"
+                      value={registroModal.entrada}
+                      onChange={(e) =>
+                        setRegistroModal({
+                          ...registroModal,
+                          entrada: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      disabled={!!registroModal.horasManual}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Saída Final
+                    </label>
+                    <input
+                      type="time"
+                      value={registroModal.saida}
+                      onChange={(e) =>
+                        setRegistroModal({
+                          ...registroModal,
+                          saida: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      disabled={!!registroModal.horasManual}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Saída Almoço
+                    </label>
+                    <input
+                      type="time"
+                      value={registroModal.saidaAlmoco}
+                      onChange={(e) =>
+                        setRegistroModal({
+                          ...registroModal,
+                          saidaAlmoco: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      disabled={!!registroModal.horasManual}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Volta Almoço
+                    </label>
+                    <input
+                      type="time"
+                      value={registroModal.voltaAlmoco}
+                      onChange={(e) =>
+                        setRegistroModal({
+                          ...registroModal,
+                          voltaAlmoco: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      disabled={!!registroModal.horasManual}
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ou informar horas trabalhadas diretamente
+                  </label>
+                  <input
+                    type="time"
+                    value={registroModal.horasManual}
+                    onChange={(e) =>
+                      setRegistroModal({
+                        ...registroModal,
+                        horasManual: e.target.value,
+                      })
+                    }
+                    placeholder="00:00"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="flex gap-3 justify-between">
+                  {registros.find((r) => r.dataDoBrasil === diaModal) && (
+                    <button
+                      onClick={() => excluirRegistro(diaModal)}
+                      className="self-start px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <Trash2 size={16} />
+                      Excluir
+                    </button>
+                  )}
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      onClick={fecharModal}
+                      className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={salvarRegistroModal}
+                      disabled={
+                        (!registroModal.entrada || !registroModal.saida) &&
+                        !registroModal.horasManual
+                      }
+                      className="disabled:opacity-50 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-200 font-semibold flex items-center gap-2"
+                    >
+                      <Save size={16} />
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Configurações de metas */}
         <div className="mt-8 bg-gray-50 rounded-xl p-6">
@@ -791,90 +813,3 @@ export default function Home() {
     </div>
   );
 }
-
-// Componente para editar registro
-const EditarLinha = ({ registro, onSave, onCancel }) => {
-  const [dados, setDados] = useState({
-    data: registro.data,
-    entrada: registro.entrada,
-    saidaAlmoco: registro.saidaAlmoco || "",
-    voltaAlmoco: registro.voltaAlmoco || "",
-    saida: registro.saida,
-    horasManual: registro.horasManual ? registro.horas.toString() : "",
-  });
-
-  return (
-    <>
-      <td className="p-4">
-        <input
-          type="date"
-          value={dados.data}
-          onChange={(e) => setDados({ ...dados, data: e.target.value })}
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-        />
-      </td>
-      <td className="p-4">
-        <input
-          type="time"
-          value={dados.entrada}
-          onChange={(e) => setDados({ ...dados, entrada: e.target.value })}
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-          disabled={!!dados.horasManual}
-        />
-      </td>
-      <td className="p-4">
-        <input
-          type="time"
-          value={dados.saidaAlmoco}
-          onChange={(e) => setDados({ ...dados, saidaAlmoco: e.target.value })}
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-          disabled={!!dados.horasManual}
-        />
-      </td>
-      <td className="p-4">
-        <input
-          type="time"
-          value={dados.voltaAlmoco}
-          onChange={(e) => setDados({ ...dados, voltaAlmoco: e.target.value })}
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-          disabled={!!dados.horasManual}
-        />
-      </td>
-      <td className="p-4">
-        <input
-          type="time"
-          value={dados.saida}
-          onChange={(e) => setDados({ ...dados, saida: e.target.value })}
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-          disabled={!!dados.horasManual}
-        />
-      </td>
-      <td className="p-4">
-        <input
-          type="number"
-          step="0.5"
-          value={dados.horasManual}
-          onChange={(e) => setDados({ ...dados, horasManual: e.target.value })}
-          placeholder="Horas direto"
-          className="w-full p-2 border border-gray-300 rounded text-sm"
-        />
-      </td>
-      <td className="p-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => onSave(dados)}
-            className="text-green-600 hover:text-green-800 p-1"
-          >
-            <Save size={16} />
-          </button>
-          <button
-            onClick={onCancel}
-            className="text-gray-600 hover:text-gray-800 p-1"
-          >
-            ✕
-          </button>
-        </div>
-      </td>
-    </>
-  );
-};
